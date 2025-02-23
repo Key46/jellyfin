@@ -1,3 +1,4 @@
+using System;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 
@@ -33,7 +34,8 @@ namespace MediaBrowser.Controller.Providers
         /// <summary>
         /// Gets the URL format string for this id.
         /// </summary>
-        string UrlFormatString { get; }
+        [Obsolete("Obsolete in 10.10, to be removed in 10.11")]
+        string? UrlFormatString { get; }
 
         /// <summary>
         /// Determines whether this id supports a given item type.

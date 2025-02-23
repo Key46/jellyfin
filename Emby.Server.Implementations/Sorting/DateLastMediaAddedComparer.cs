@@ -1,7 +1,9 @@
+#nullable disable
 #pragma warning disable CS1591
 
 using System;
 using Jellyfin.Data.Entities;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Sorting;
@@ -33,7 +35,7 @@ namespace Emby.Server.Implementations.Sorting
         /// Gets the name.
         /// </summary>
         /// <value>The name.</value>
-        public string Name => ItemSortBy.DateLastContentAdded;
+        public ItemSortBy Type => ItemSortBy.DateLastContentAdded;
 
         /// <summary>
         /// Compares the specified x.

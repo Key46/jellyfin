@@ -21,7 +21,7 @@ namespace MediaBrowser.Controller.Authentication
 
     public interface IRequiresResolvedUser
     {
-        Task<ProviderAuthenticationResult> Authenticate(string username, string password, User resolvedUser);
+        Task<ProviderAuthenticationResult> Authenticate(string username, string password, User? resolvedUser);
     }
 
     public interface IHasNewUserPolicy
@@ -31,8 +31,8 @@ namespace MediaBrowser.Controller.Authentication
 
     public class ProviderAuthenticationResult
     {
-        public string Username { get; set; }
+        public required string Username { get; set; }
 
-        public string DisplayName { get; set; }
+        public string? DisplayName { get; set; }
     }
 }

@@ -1,3 +1,5 @@
+#nullable disable
+
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -41,7 +43,7 @@ namespace MediaBrowser.MediaEncoding.Probing
         /// </summary>
         /// <value>The codec_type.</value>
         [JsonPropertyName("codec_type")]
-        public string CodecType { get; set; }
+        public CodecType CodecType { get; set; }
 
         /// <summary>
         /// Gets or sets the sample_rate.
@@ -226,11 +228,11 @@ namespace MediaBrowser.MediaEncoding.Probing
         public long StartPts { get; set; }
 
         /// <summary>
-        /// Gets or sets the is_avc.
+        /// Gets or sets a value indicating whether the stream is AVC.
         /// </summary>
         /// <value>The is_avc.</value>
         [JsonPropertyName("is_avc")]
-        public string IsAvc { get; set; }
+        public bool IsAvc { get; set; }
 
         /// <summary>
         /// Gets or sets the nal_length_size.
@@ -308,5 +310,12 @@ namespace MediaBrowser.MediaEncoding.Probing
         /// <value>The color primaries.</value>
         [JsonPropertyName("color_primaries")]
         public string ColorPrimaries { get; set; }
+
+        /// <summary>
+        /// Gets or sets the side_data_list.
+        /// </summary>
+        /// <value>The side_data_list.</value>
+        [JsonPropertyName("side_data_list")]
+        public IReadOnlyList<MediaStreamInfoSideData> SideDataList { get; set; }
     }
 }
