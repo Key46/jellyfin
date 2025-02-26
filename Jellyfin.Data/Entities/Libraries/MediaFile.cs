@@ -1,5 +1,3 @@
-#pragma warning disable CA2227
-
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -21,10 +19,7 @@ namespace Jellyfin.Data.Entities.Libraries
         /// <param name="kind">The file kind.</param>
         public MediaFile(string path, MediaFileKind kind)
         {
-            if (string.IsNullOrEmpty(path))
-            {
-                throw new ArgumentNullException(nameof(path));
-            }
+            ArgumentException.ThrowIfNullOrEmpty(path);
 
             Path = path;
             Kind = kind;
@@ -33,13 +28,13 @@ namespace Jellyfin.Data.Entities.Libraries
         }
 
         /// <summary>
-        /// Gets or sets the id.
+        /// Gets the id.
         /// </summary>
         /// <remarks>
         /// Identity, Indexed, Required.
         /// </remarks>
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int Id { get; protected set; }
+        public int Id { get; private set; }
 
         /// <summary>
         /// Gets or sets the path relative to the library root.
@@ -61,12 +56,12 @@ namespace Jellyfin.Data.Entities.Libraries
 
         /// <inheritdoc />
         [ConcurrencyCheck]
-        public uint RowVersion { get; set; }
+        public uint RowVersion { get; private set; }
 
         /// <summary>
-        /// Gets or sets a collection containing the streams in this file.
+        /// Gets a collection containing the streams in this file.
         /// </summary>
-        public virtual ICollection<MediaFileStream> MediaFileStreams { get; protected set; }
+        public virtual ICollection<MediaFileStream> MediaFileStreams { get; private set; }
 
         /// <inheritdoc />
         public void OnSavingChanges()

@@ -8,7 +8,10 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Xml;
+using Jellyfin.Data.Enums;
+using Jellyfin.Extensions;
 using MediaBrowser.Common.Extensions;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -24,14 +27,11 @@ using Microsoft.Extensions.Logging;
 
 namespace MediaBrowser.XbmcMetadata.Savers
 {
-    public abstract class BaseNfoSaver : IMetadataFileSaver
+    public abstract partial class BaseNfoSaver : IMetadataFileSaver
     {
         public const string DateAddedFormat = "yyyy-MM-dd HH:mm:ss";
 
         public const string YouTubeWatchUrl = "https://www.youtube.com/watch?v=";
-
-        // filters control characters but allows only properly-formed surrogate sequences
-        private const string _invalidXMLCharsRegex = @"(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFEFF\uFFFE\uFFFF]";
 
         private static readonly HashSet<string> _commonTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -145,6 +145,12 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
         public static string SaverName => "Nfo";
 
+        // filters control characters but allows only properly-formed surrogate sequences
+        // http://web.archive.org/web/20181230211547/https://emby.media/community/index.php?/topic/49071-nfo-not-generated-on-actualize-or-rescan-or-identify
+        // Web Archive version of link since it's not really explained in the thread.
+        [GeneratedRegex(@"(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFEFF\uFFFE\uFFFF]")]
+        private static partial Regex InvalidXMLCharsRegexRegex();
+
         /// <inheritdoc />
         public string GetSavePath(BaseItem item)
             => GetLocalSavePath(item);
@@ -179,7 +185,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
         }
 
         /// <inheritdoc />
-        public void Save(BaseItem item, CancellationToken cancellationToken)
+        public async Task SaveAsync(BaseItem item, CancellationToken cancellationToken)
         {
             var path = GetSavePath(item);
 
@@ -191,11 +197,11 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                SaveToFile(memoryStream, path);
+                await SaveToFileAsync(memoryStream, path).ConfigureAwait(false);
             }
         }
 
-        private void SaveToFile(Stream stream, string path)
+        private async Task SaveToFileAsync(Stream stream, string path)
         {
             var directory = Path.GetDirectoryName(path) ?? throw new ArgumentException($"Provided path ({path}) is not valid.", nameof(path));
             Directory.CreateDirectory(directory);
@@ -203,10 +209,19 @@ namespace MediaBrowser.XbmcMetadata.Savers
             // On Windows, saving the file will fail if the file is hidden or readonly
             FileSystem.SetAttributes(path, false, false);
 
-            // use FileShare.None as this bypasses dotnet bug dotnet/runtime#42790 .
-            using (var filestream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
+            var fileStreamOptions = new FileStreamOptions()
             {
-                stream.CopyTo(filestream);
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                PreallocationSize = stream.Length,
+                Options = FileOptions.Asynchronous
+            };
+
+            var filestream = new FileStream(path, fileStreamOptions);
+            await using (filestream.ConfigureAwait(false))
+            {
+                await stream.CopyToAsync(filestream).ConfigureAwait(false);
             }
 
             if (ConfigurationManager.Configuration.SaveMetadataHidden)
@@ -246,7 +261,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
                 var baseItem = item;
 
-                if (baseItem != null)
+                if (baseItem is not null)
                 {
                     AddCommonNodes(baseItem, writer, LibraryManager, UserManager, UserDataManager, ConfigurationManager);
                 }
@@ -299,11 +314,11 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 {
                     var codec = stream.Codec;
 
-                    if ((stream.CodecTag ?? string.Empty).IndexOf("xvid", StringComparison.OrdinalIgnoreCase) != -1)
+                    if ((stream.CodecTag ?? string.Empty).Contains("xvid", StringComparison.OrdinalIgnoreCase))
                     {
                         codec = "xvid";
                     }
-                    else if ((stream.CodecTag ?? string.Empty).IndexOf("divx", StringComparison.OrdinalIgnoreCase) != -1)
+                    else if ((stream.CodecTag ?? string.Empty).Contains("divx", StringComparison.OrdinalIgnoreCase))
                     {
                         codec = "divx";
                     }
@@ -333,7 +348,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     writer.WriteElementString("aspectratio", stream.AspectRatio);
                 }
 
-                var framerate = stream.AverageFrameRate ?? stream.RealFrameRate;
+                var framerate = stream.ReferenceFrameRate;
 
                 if (framerate.HasValue)
                 {
@@ -342,9 +357,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
                 if (!string.IsNullOrEmpty(stream.Language))
                 {
-                    // http://web.archive.org/web/20181230211547/https://emby.media/community/index.php?/topic/49071-nfo-not-generated-on-actualize-or-rescan-or-identify
-                    // Web Archive version of link since it's not really explained in the thread.
-                    writer.WriteElementString("language", Regex.Replace(stream.Language, _invalidXMLCharsRegex, string.Empty));
+                    writer.WriteElementString("language", InvalidXMLCharsRegexRegex().Replace(stream.Language, string.Empty));
                 }
 
                 var scanType = stream.IsInterlaced ? "interlaced" : "progressive";
@@ -462,7 +475,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 writer.WriteElementString("lockedfields", string.Join('|', item.LockedFields));
             }
 
-            writer.WriteElementString("dateadded", item.DateCreated.ToLocalTime().ToString(DateAddedFormat, CultureInfo.InvariantCulture));
+            writer.WriteElementString("dateadded", item.DateCreated.ToString(DateAddedFormat, CultureInfo.InvariantCulture));
 
             writer.WriteElementString("title", item.Name ?? string.Empty);
 
@@ -474,7 +487,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
             var people = libraryManager.GetPeople(item);
 
             var directors = people
-                .Where(i => IsPersonType(i, PersonType.Director))
+                .Where(i => i.IsType(PersonKind.Director))
                 .Select(i => i.Name)
                 .ToList();
 
@@ -484,7 +497,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
             }
 
             var writers = people
-                .Where(i => IsPersonType(i, PersonType.Writer))
+                .Where(i => i.IsType(PersonKind.Writer))
                 .Select(i => i.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -555,7 +568,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
             }
 
             // Series xml saver already saves this
-            if (!(item is Series))
+            if (item is not Series)
             {
                 var tvdb = item.GetProviderId(MetadataProvider.Tvdb);
                 if (!string.IsNullOrEmpty(tvdb))
@@ -582,7 +595,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 writer.WriteElementString("countrycode", item.PreferredMetadataCountryCode);
             }
 
-            if (item.PremiereDate.HasValue && !(item is Episode))
+            if (item.PremiereDate.HasValue && item is not Episode)
             {
                 var formatString = options.ReleaseDateFormat;
 
@@ -590,28 +603,28 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 {
                     writer.WriteElementString(
                         "formed",
-                        item.PremiereDate.Value.ToLocalTime().ToString(formatString, CultureInfo.InvariantCulture));
+                        item.PremiereDate.Value.ToString(formatString, CultureInfo.InvariantCulture));
                 }
                 else
                 {
                     writer.WriteElementString(
                         "premiered",
-                        item.PremiereDate.Value.ToLocalTime().ToString(formatString, CultureInfo.InvariantCulture));
+                        item.PremiereDate.Value.ToString(formatString, CultureInfo.InvariantCulture));
                     writer.WriteElementString(
                         "releasedate",
-                        item.PremiereDate.Value.ToLocalTime().ToString(formatString, CultureInfo.InvariantCulture));
+                        item.PremiereDate.Value.ToString(formatString, CultureInfo.InvariantCulture));
                 }
             }
 
             if (item.EndDate.HasValue)
             {
-                if (!(item is Episode))
+                if (item is not Episode)
                 {
                     var formatString = options.ReleaseDateFormat;
 
                     writer.WriteElementString(
                         "enddate",
-                        item.EndDate.Value.ToLocalTime().ToString(formatString, CultureInfo.InvariantCulture));
+                        item.EndDate.Value.ToString(formatString, CultureInfo.InvariantCulture));
                 }
             }
 
@@ -737,7 +750,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 writtenProviderIds.Add(MetadataProvider.TvRage.ToString());
             }
 
-            if (item.ProviderIds != null)
+            if (item.ProviderIds is not null)
             {
                 foreach (var providerKey in item.ProviderIds.Keys)
                 {
@@ -812,7 +825,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
         private string GetOutputTrailerUrl(string url)
         {
             // This is what xbmc expects
-            return url.Replace(YouTubeWatchUrl, "plugin://plugin.video.youtube/?action=play_video&videoid=", StringComparison.OrdinalIgnoreCase);
+            return url.Replace(YouTubeWatchUrl, "plugin://plugin.video.youtube/play/?video_id=", StringComparison.OrdinalIgnoreCase);
         }
 
         private void AddImages(BaseItem item, XmlWriter writer, ILibraryManager libraryManager)
@@ -821,7 +834,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
             var image = item.GetImageInfo(ImageType.Primary, 0);
 
-            if (image != null)
+            if (image is not null)
             {
                 writer.WriteElementString("poster", GetImagePathToSave(image, libraryManager));
             }
@@ -844,7 +857,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
             var user = userManager.GetUserById(Guid.Parse(userId));
 
-            if (user == null)
+            if (user is null)
             {
                 return;
             }
@@ -856,53 +869,56 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
             var userdata = userDataRepo.GetUserData(user, item);
 
-            writer.WriteElementString(
+            if (userdata is not null)
+            {
+                writer.WriteElementString(
                 "isuserfavorite",
                 userdata.IsFavorite.ToString(CultureInfo.InvariantCulture).ToLowerInvariant());
 
-            if (userdata.Rating.HasValue)
-            {
-                writer.WriteElementString(
-                    "userrating",
-                    userdata.Rating.Value.ToString(CultureInfo.InvariantCulture).ToLowerInvariant());
-            }
-
-            if (!item.IsFolder)
-            {
-                writer.WriteElementString(
-                    "playcount",
-                    userdata.PlayCount.ToString(CultureInfo.InvariantCulture));
-                writer.WriteElementString(
-                    "watched",
-                    userdata.Played.ToString(CultureInfo.InvariantCulture).ToLowerInvariant());
-
-                if (userdata.LastPlayedDate.HasValue)
+                if (userdata.Rating.HasValue)
                 {
                     writer.WriteElementString(
-                        "lastplayed",
-                        userdata.LastPlayedDate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture).ToLowerInvariant());
+                        "userrating",
+                        userdata.Rating.Value.ToString(CultureInfo.InvariantCulture).ToLowerInvariant());
                 }
 
-                writer.WriteStartElement("resume");
+                if (!item.IsFolder)
+                {
+                    writer.WriteElementString(
+                        "playcount",
+                        userdata.PlayCount.ToString(CultureInfo.InvariantCulture));
+                    writer.WriteElementString(
+                        "watched",
+                        userdata.Played.ToString(CultureInfo.InvariantCulture).ToLowerInvariant());
 
-                var runTimeTicks = item.RunTimeTicks ?? 0;
+                    if (userdata.LastPlayedDate.HasValue)
+                    {
+                        writer.WriteElementString(
+                            "lastplayed",
+                            userdata.LastPlayedDate.Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture).ToLowerInvariant());
+                    }
 
-                writer.WriteElementString(
-                    "position",
-                    TimeSpan.FromTicks(userdata.PlaybackPositionTicks).TotalSeconds.ToString(CultureInfo.InvariantCulture));
-                writer.WriteElementString(
-                    "total",
-                    TimeSpan.FromTicks(runTimeTicks).TotalSeconds.ToString(CultureInfo.InvariantCulture));
+                    writer.WriteStartElement("resume");
+
+                    var runTimeTicks = item.RunTimeTicks ?? 0;
+
+                    writer.WriteElementString(
+                        "position",
+                        TimeSpan.FromTicks(userdata.PlaybackPositionTicks).TotalSeconds.ToString(CultureInfo.InvariantCulture));
+                    writer.WriteElementString(
+                        "total",
+                        TimeSpan.FromTicks(runTimeTicks).TotalSeconds.ToString(CultureInfo.InvariantCulture));
+                }
             }
 
             writer.WriteEndElement();
         }
 
-        private void AddActors(List<PersonInfo> people, XmlWriter writer, ILibraryManager libraryManager, bool saveImagePath)
+        private void AddActors(IReadOnlyList<PersonInfo> people, XmlWriter writer, ILibraryManager libraryManager, bool saveImagePath)
         {
             foreach (var person in people)
             {
-                if (IsPersonType(person, PersonType.Director) || IsPersonType(person, PersonType.Writer))
+                if (person.IsType(PersonKind.Director) || person.IsType(PersonKind.Writer))
                 {
                     continue;
                 }
@@ -919,9 +935,9 @@ namespace MediaBrowser.XbmcMetadata.Savers
                     writer.WriteElementString("role", person.Role);
                 }
 
-                if (!string.IsNullOrWhiteSpace(person.Type))
+                if (person.Type != PersonKind.Unknown)
                 {
-                    writer.WriteElementString("type", person.Type);
+                    writer.WriteElementString("type", person.Type.ToString());
                 }
 
                 if (person.SortOrder.HasValue)
@@ -934,9 +950,9 @@ namespace MediaBrowser.XbmcMetadata.Savers
                 if (saveImagePath)
                 {
                     var personEntity = libraryManager.GetPerson(person.Name);
-                    var image = personEntity.GetImageInfo(ImageType.Primary, 0);
+                    var image = personEntity?.GetImageInfo(ImageType.Primary, 0);
 
-                    if (image != null)
+                    if (image is not null)
                     {
                         writer.WriteElementString(
                             "thumb",
@@ -957,10 +973,6 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
             return libraryManager.GetPathAfterNetworkSubstitution(image.Path);
         }
-
-        private bool IsPersonType(PersonInfo person, string type)
-            => string.Equals(person.Type, type, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(person.Role, type, StringComparison.OrdinalIgnoreCase);
 
         private void AddCustomTags(string path, IReadOnlyCollection<string> xmlTagsUsed, XmlWriter writer, ILogger<BaseNfoSaver> logger)
         {
@@ -996,7 +1008,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
                         var name = reader.Name;
 
                         if (!_commonTags.Contains(name)
-                            && !xmlTagsUsed.Contains(name, StringComparer.OrdinalIgnoreCase))
+                            && !xmlTagsUsed.Contains(name, StringComparison.OrdinalIgnoreCase))
                         {
                             writer.WriteNode(reader, false);
                         }

@@ -39,7 +39,7 @@ namespace MediaBrowser.Providers.BoxSets
         protected override bool EnableUpdatingPremiereDateFromChildren => true;
 
         /// <inheritdoc />
-        protected override IList<BaseItem> GetChildrenForMetadataUpdates(BoxSet item)
+        protected override IReadOnlyList<BaseItem> GetChildrenForMetadataUpdates(BoxSet item)
         {
             return item.GetLinkedChildren();
         }
@@ -47,32 +47,39 @@ namespace MediaBrowser.Providers.BoxSets
         /// <inheritdoc />
         protected override void MergeData(MetadataResult<BoxSet> source, MetadataResult<BoxSet> target, MetadataField[] lockedFields, bool replaceData, bool mergeMetadataSettings)
         {
-            ProviderUtils.MergeBaseItemData(source, target, lockedFields, replaceData, mergeMetadataSettings);
+            base.MergeData(source, target, lockedFields, replaceData, mergeMetadataSettings);
 
             var sourceItem = source.Item;
             var targetItem = target.Item;
 
             if (mergeMetadataSettings)
             {
-                targetItem.LinkedChildren = sourceItem.LinkedChildren;
+                if (replaceData || targetItem.LinkedChildren.Length == 0)
+                {
+                    targetItem.LinkedChildren = sourceItem.LinkedChildren;
+                }
+                else
+                {
+                    targetItem.LinkedChildren = sourceItem.LinkedChildren.Concat(targetItem.LinkedChildren).Distinct().ToArray();
+                }
             }
         }
 
         /// <inheritdoc />
-        protected override ItemUpdateType BeforeSaveInternal(BoxSet item, bool isFullRefresh, ItemUpdateType currentUpdateType)
+        protected override ItemUpdateType BeforeSaveInternal(BoxSet item, bool isFullRefresh, ItemUpdateType updateType)
         {
-            var updateType = base.BeforeSaveInternal(item, isFullRefresh, currentUpdateType);
+            var updatedType = base.BeforeSaveInternal(item, isFullRefresh, updateType);
 
             var libraryFolderIds = item.GetLibraryFolderIds();
 
             var itemLibraryFolderIds = item.LibraryFolderIds;
-            if (itemLibraryFolderIds == null || !libraryFolderIds.SequenceEqual(itemLibraryFolderIds))
+            if (itemLibraryFolderIds is null || !libraryFolderIds.SequenceEqual(itemLibraryFolderIds))
             {
                 item.LibraryFolderIds = libraryFolderIds;
-                updateType |= ItemUpdateType.MetadataImport;
+                updatedType |= ItemUpdateType.MetadataImport;
             }
 
-            return updateType;
+            return updatedType;
         }
     }
 }

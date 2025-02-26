@@ -1,5 +1,3 @@
-#pragma warning disable CA2227
-
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -31,20 +29,9 @@ namespace Jellyfin.Data.Entities
         /// <param name="passwordResetProviderId">The Id of the user's password reset provider.</param>
         public User(string username, string authenticationProviderId, string passwordResetProviderId)
         {
-            if (string.IsNullOrEmpty(username))
-            {
-                throw new ArgumentNullException(nameof(username));
-            }
-
-            if (string.IsNullOrEmpty(authenticationProviderId))
-            {
-                throw new ArgumentNullException(nameof(authenticationProviderId));
-            }
-
-            if (string.IsNullOrEmpty(passwordResetProviderId))
-            {
-                throw new ArgumentNullException(nameof(passwordResetProviderId));
-            }
+            ArgumentException.ThrowIfNullOrEmpty(username);
+            ArgumentException.ThrowIfNullOrEmpty(authenticationProviderId);
+            ArgumentException.ThrowIfNullOrEmpty(passwordResetProviderId);
 
             Username = username;
             AuthenticationProviderId = authenticationProviderId;
@@ -103,16 +90,6 @@ namespace Jellyfin.Data.Entities
         [MaxLength(65535)]
         [StringLength(65535)]
         public string? Password { get; set; }
-
-        /// <summary>
-        /// Gets or sets the user's easy password, or <c>null</c> if none is set.
-        /// </summary>
-        /// <remarks>
-        /// Max length = 65535.
-        /// </remarks>
-        [MaxLength(65535)]
-        [StringLength(65535)]
-        public string? EasyPassword { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether the user must update their password.
@@ -302,12 +279,9 @@ namespace Jellyfin.Data.Entities
         public virtual ImageInfo? ProfileImage { get; set; }
 
         /// <summary>
-        /// Gets or sets the user's display preferences.
+        /// Gets the user's display preferences.
         /// </summary>
-        /// <remarks>
-        /// Required.
-        /// </remarks>
-        public virtual ICollection<DisplayPreferences> DisplayPreferences { get; set; }
+        public virtual ICollection<DisplayPreferences> DisplayPreferences { get; private set; }
 
         /// <summary>
         /// Gets or sets the level of sync play permissions this user has.
@@ -315,51 +289,50 @@ namespace Jellyfin.Data.Entities
         public SyncPlayUserAccessType SyncPlayAccess { get; set; }
 
         /// <summary>
-        /// Gets or sets the row version.
+        /// Gets or sets the cast receiver id.
         /// </summary>
-        /// <remarks>
-        /// Required, Concurrency Token.
-        /// </remarks>
+        [StringLength(32)]
+        public string? CastReceiverId { get; set; }
+
+        /// <inheritdoc />
         [ConcurrencyCheck]
-        public uint RowVersion { get; set; }
+        public uint RowVersion { get; private set; }
 
         /// <summary>
-        /// Gets or sets the list of access schedules this user has.
+        /// Gets the list of access schedules this user has.
         /// </summary>
-        public virtual ICollection<AccessSchedule> AccessSchedules { get; protected set; }
+        public virtual ICollection<AccessSchedule> AccessSchedules { get; private set; }
 
         /// <summary>
-        /// Gets or sets the list of item display preferences.
+        /// Gets the list of item display preferences.
         /// </summary>
-        public virtual ICollection<ItemDisplayPreferences> ItemDisplayPreferences { get; protected set; }
+        public virtual ICollection<ItemDisplayPreferences> ItemDisplayPreferences { get; private set; }
 
         /*
         /// <summary>
-        /// Gets or sets the list of groups this user is a member of.
+        /// Gets the list of groups this user is a member of.
         /// </summary>
-        [ForeignKey("Group_Groups_Guid")]
-        public virtual ICollection<Group> Groups { get; protected set; }
+        public virtual ICollection<Group> Groups { get; private set; }
         */
 
         /// <summary>
-        /// Gets or sets the list of permissions this user has.
+        /// Gets the list of permissions this user has.
         /// </summary>
         [ForeignKey("Permission_Permissions_Guid")]
-        public virtual ICollection<Permission> Permissions { get; protected set; }
+        public virtual ICollection<Permission> Permissions { get; private set; }
 
         /*
         /// <summary>
-        /// Gets or sets the list of provider mappings this user has.
+        /// Gets the list of provider mappings this user has.
         /// </summary>
-        [ForeignKey("ProviderMapping_ProviderMappings_Id")]
-        public virtual ICollection<ProviderMapping> ProviderMappings { get; protected set; }
+        public virtual ICollection<ProviderMapping> ProviderMappings { get; private set; }
         */
 
         /// <summary>
-        /// Gets or sets the list of preferences this user has.
+        /// Gets the list of preferences this user has.
         /// </summary>
         [ForeignKey("Preference_Preferences_Guid")]
-        public virtual ICollection<Preference> Preferences { get; protected set; }
+        public virtual ICollection<Preference> Preferences { get; private set; }
 
         /// <inheritdoc/>
         public void OnSavingChanges()
@@ -374,7 +347,7 @@ namespace Jellyfin.Data.Entities
         /// <returns><c>True</c> if the user has the specified permission.</returns>
         public bool HasPermission(PermissionKind kind)
         {
-            return Permissions.First(p => p.Kind == kind).Value;
+            return Permissions.FirstOrDefault(p => p.Kind == kind)?.Value ?? false;
         }
 
         /// <summary>
@@ -384,7 +357,15 @@ namespace Jellyfin.Data.Entities
         /// <param name="value">The value to set.</param>
         public void SetPermission(PermissionKind kind, bool value)
         {
-            Permissions.First(p => p.Kind == kind).Value = value;
+            var currentPermission = Permissions.FirstOrDefault(p => p.Kind == kind);
+            if (currentPermission is null)
+            {
+                Permissions.Add(new Permission(kind, value));
+            }
+            else
+            {
+                currentPermission.Value = value;
+            }
         }
 
         /// <summary>
@@ -394,9 +375,9 @@ namespace Jellyfin.Data.Entities
         /// <returns>A string array containing the user's preferences.</returns>
         public string[] GetPreference(PreferenceKind preference)
         {
-            var val = Preferences.First(p => p.Kind == preference).Value;
+            var val = Preferences.FirstOrDefault(p => p.Kind == preference)?.Value;
 
-            return Equals(val, string.Empty) ? Array.Empty<string>() : val.Split(Delimiter);
+            return string.IsNullOrEmpty(val) ? Array.Empty<string>() : val.Split(Delimiter);
         }
 
         /// <summary>
@@ -407,7 +388,7 @@ namespace Jellyfin.Data.Entities
         /// <returns>A {T} array containing the user's preference.</returns>
         public T[] GetPreferenceValues<T>(PreferenceKind preference)
         {
-            var val = Preferences.First(p => p.Kind == preference).Value;
+            var val = Preferences.FirstOrDefault(p => p.Kind == preference)?.Value;
             if (string.IsNullOrEmpty(val))
             {
                 return Array.Empty<T>();
@@ -423,7 +404,7 @@ namespace Jellyfin.Data.Entities
                 try
                 {
                     var parsedValue = converter.ConvertFromString(stringValues[i].Trim());
-                    if (parsedValue != null)
+                    if (parsedValue is not null)
                     {
                         parsedValues[convertedCount++] = (T)parsedValue;
                     }
@@ -444,8 +425,16 @@ namespace Jellyfin.Data.Entities
         /// <param name="values">The values.</param>
         public void SetPreference(PreferenceKind preference, string[] values)
         {
-            Preferences.First(p => p.Kind == preference).Value
-                = string.Join(Delimiter, values);
+            var value = string.Join(Delimiter, values);
+            var currentPreference = Preferences.FirstOrDefault(p => p.Kind == preference);
+            if (currentPreference is null)
+            {
+                Preferences.Add(new Preference(preference, value));
+            }
+            else
+            {
+                currentPreference.Value = value;
+            }
         }
 
         /// <summary>
@@ -456,8 +445,16 @@ namespace Jellyfin.Data.Entities
         /// <typeparam name="T">The type of value.</typeparam>
         public void SetPreference<T>(PreferenceKind preference, T[] values)
         {
-            Preferences.First(p => p.Kind == preference).Value
-                = string.Join(Delimiter, values);
+            var value = string.Join(Delimiter, values);
+            var currentPreference = Preferences.FirstOrDefault(p => p.Kind == preference);
+            if (currentPreference is null)
+            {
+                Preferences.Add(new Preference(preference, value));
+            }
+            else
+            {
+                currentPreference.Value = value;
+            }
         }
 
         /// <summary>
@@ -507,6 +504,9 @@ namespace Jellyfin.Data.Entities
             Permissions.Add(new Permission(PermissionKind.EnableVideoPlaybackTranscoding, true));
             Permissions.Add(new Permission(PermissionKind.ForceRemoteSourceTranscoding, false));
             Permissions.Add(new Permission(PermissionKind.EnableRemoteControlOfOtherUsers, false));
+            Permissions.Add(new Permission(PermissionKind.EnableCollectionManagement, false));
+            Permissions.Add(new Permission(PermissionKind.EnableSubtitleManagement, false));
+            Permissions.Add(new Permission(PermissionKind.EnableLyricManagement, false));
         }
 
         /// <summary>
@@ -514,7 +514,7 @@ namespace Jellyfin.Data.Entities
         /// </summary>
         public void AddDefaultPreferences()
         {
-            foreach (var val in Enum.GetValues(typeof(PreferenceKind)).Cast<PreferenceKind>())
+            foreach (var val in Enum.GetValues<PreferenceKind>())
             {
                 Preferences.Add(new Preference(val, string.Empty));
             }
@@ -524,8 +524,9 @@ namespace Jellyfin.Data.Entities
         {
             var localTime = date.ToLocalTime();
             var hour = localTime.TimeOfDay.TotalHours;
+            var currentDayOfWeek = localTime.DayOfWeek;
 
-            return DayOfWeekHelper.GetDaysOfWeek(schedule.DayOfWeek).Contains(localTime.DayOfWeek)
+            return schedule.DayOfWeek.Contains(currentDayOfWeek)
                    && hour >= schedule.StartHour
                    && hour <= schedule.EndHour;
         }

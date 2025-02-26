@@ -1,5 +1,3 @@
-#pragma warning disable CA2227
-
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -19,10 +17,7 @@ namespace Jellyfin.Data.Entities.Libraries
         /// <param name="name">The name of the person.</param>
         public Person(string name)
         {
-            if (string.IsNullOrEmpty(name))
-            {
-                throw new ArgumentNullException(nameof(name));
-            }
+            ArgumentException.ThrowIfNullOrEmpty(name);
 
             Name = name;
             DateAdded = DateTime.UtcNow;
@@ -32,13 +27,13 @@ namespace Jellyfin.Data.Entities.Libraries
         }
 
         /// <summary>
-        /// Gets or sets the id.
+        /// Gets the id.
         /// </summary>
         /// <remarks>
         /// Identity, Indexed, Required.
         /// </remarks>
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int Id { get; protected set; }
+        public int Id { get; private set; }
 
         /// <summary>
         /// Gets or sets the name.
@@ -61,12 +56,12 @@ namespace Jellyfin.Data.Entities.Libraries
         public string? SourceId { get; set; }
 
         /// <summary>
-        /// Gets or sets the date added.
+        /// Gets the date added.
         /// </summary>
         /// <remarks>
         /// Required.
         /// </remarks>
-        public DateTime DateAdded { get; protected set; }
+        public DateTime DateAdded { get; private set; }
 
         /// <summary>
         /// Gets or sets the date modified.
@@ -78,12 +73,12 @@ namespace Jellyfin.Data.Entities.Libraries
 
         /// <inheritdoc />
         [ConcurrencyCheck]
-        public uint RowVersion { get; set; }
+        public uint RowVersion { get; private set; }
 
         /// <summary>
-        /// Gets or sets a list of metadata sources for this person.
+        /// Gets a list of metadata sources for this person.
         /// </summary>
-        public virtual ICollection<MetadataProviderId> Sources { get; protected set; }
+        public virtual ICollection<MetadataProviderId> Sources { get; private set; }
 
         /// <inheritdoc />
         public void OnSavingChanges()

@@ -1,3 +1,5 @@
+#nullable disable
+
 #pragma warning disable CS1591
 
 using System;
@@ -7,7 +9,6 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using Jellyfin.Data.Entities;
 using Jellyfin.Data.Enums;
-using MediaBrowser.Common.Progress;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Model.Querying;
 
@@ -15,7 +16,13 @@ namespace MediaBrowser.Controller.Channels
 {
     public class Channel : Folder
     {
-        public override bool IsVisible(User user)
+        [JsonIgnore]
+        public override bool SupportsInheritedParentImages => false;
+
+        [JsonIgnore]
+        public override SourceType SourceType => SourceType.Channel;
+
+        public override bool IsVisible(User user, bool skipAllowedTagsCheck = false)
         {
             var blockedChannelsPreference = user.GetPreferenceValues<Guid>(PreferenceKind.BlockedChannels);
             if (blockedChannelsPreference.Length != 0)
@@ -34,14 +41,8 @@ namespace MediaBrowser.Controller.Channels
                 }
             }
 
-            return base.IsVisible(user);
+            return base.IsVisible(user, skipAllowedTagsCheck);
         }
-
-        [JsonIgnore]
-        public override bool SupportsInheritedParentImages => false;
-
-        [JsonIgnore]
-        public override SourceType SourceType => SourceType.Channel;
 
         protected override QueryResult<BaseItem> GetItemsInternal(InternalItemsQuery query)
         {
@@ -51,7 +52,7 @@ namespace MediaBrowser.Controller.Channels
                 query.ChannelIds = new Guid[] { Id };
 
                 // Don't blow up here because it could cause parent screens with other content to fail
-                return ChannelManager.GetChannelItemsInternal(query, new SimpleProgress<double>(), CancellationToken.None).Result;
+                return ChannelManager.GetChannelItemsInternal(query, new Progress<double>(), CancellationToken.None).GetAwaiter().GetResult();
             }
             catch
             {
@@ -75,14 +76,9 @@ namespace MediaBrowser.Controller.Channels
             return false;
         }
 
-        protected override bool IsAllowTagFilterEnforced()
-        {
-            return false;
-        }
-
         internal static bool IsChannelVisible(BaseItem channelItem, User user)
         {
-            var channel = ChannelManager.GetChannel(channelItem.ChannelId.ToString(""));
+            var channel = ChannelManager.GetChannel(channelItem.ChannelId.ToString(string.Empty));
 
             return channel.IsVisible(user);
         }

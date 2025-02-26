@@ -1,6 +1,8 @@
+#nullable disable
 #pragma warning disable CS1591
 
 using Jellyfin.Data.Entities;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Sorting;
@@ -20,7 +22,7 @@ namespace Emby.Server.Implementations.Sorting
         /// Gets the name.
         /// </summary>
         /// <value>The name.</value>
-        public string Name => ItemSortBy.IsFavoriteOrLiked;
+        public ItemSortBy Type => ItemSortBy.IsFavoriteOrLiked;
 
         /// <summary>
         /// Gets or sets the user data repository.

@@ -27,26 +27,31 @@ namespace Jellyfin.Api.Auth
         /// <param name="options">Options monitor.</param>
         /// <param name="logger">The logger.</param>
         /// <param name="encoder">The url encoder.</param>
-        /// <param name="clock">The system clock.</param>
         public CustomAuthenticationHandler(
             IAuthService authService,
             IOptionsMonitor<AuthenticationSchemeOptions> options,
             ILoggerFactory logger,
-            UrlEncoder encoder,
-            ISystemClock clock) : base(options, logger, encoder, clock)
+            UrlEncoder encoder)
+            : base(options, logger, encoder)
         {
             _authService = authService;
             _logger = logger.CreateLogger<CustomAuthenticationHandler>();
         }
 
         /// <inheritdoc />
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             try
             {
-                var authorizationInfo = _authService.Authenticate(Request);
+                var authorizationInfo = await _authService.Authenticate(Request).ConfigureAwait(false);
+                if (!authorizationInfo.HasToken)
+                {
+                    return AuthenticateResult.NoResult();
+                }
+
                 var role = UserRoles.User;
-                if (authorizationInfo.IsApiKey || authorizationInfo.User.HasPermission(PermissionKind.IsAdministrator))
+                if (authorizationInfo.IsApiKey
+                    || (authorizationInfo.User?.HasPermission(PermissionKind.IsAdministrator) ?? false))
                 {
                     role = UserRoles.Administrator;
                 }
@@ -56,10 +61,10 @@ namespace Jellyfin.Api.Auth
                     new Claim(ClaimTypes.Name, authorizationInfo.User?.Username ?? string.Empty),
                     new Claim(ClaimTypes.Role, role),
                     new Claim(InternalClaimTypes.UserId, authorizationInfo.UserId.ToString("N", CultureInfo.InvariantCulture)),
-                    new Claim(InternalClaimTypes.DeviceId, authorizationInfo.DeviceId),
-                    new Claim(InternalClaimTypes.Device, authorizationInfo.Device),
-                    new Claim(InternalClaimTypes.Client, authorizationInfo.Client),
-                    new Claim(InternalClaimTypes.Version, authorizationInfo.Version),
+                    new Claim(InternalClaimTypes.DeviceId, authorizationInfo.DeviceId ?? string.Empty),
+                    new Claim(InternalClaimTypes.Device, authorizationInfo.Device ?? string.Empty),
+                    new Claim(InternalClaimTypes.Client, authorizationInfo.Client ?? string.Empty),
+                    new Claim(InternalClaimTypes.Version, authorizationInfo.Version ?? string.Empty),
                     new Claim(InternalClaimTypes.Token, authorizationInfo.Token),
                     new Claim(InternalClaimTypes.IsApiKey, authorizationInfo.IsApiKey.ToString(CultureInfo.InvariantCulture))
                 };
@@ -68,16 +73,16 @@ namespace Jellyfin.Api.Auth
                 var principal = new ClaimsPrincipal(identity);
                 var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
-                return Task.FromResult(AuthenticateResult.Success(ticket));
+                return AuthenticateResult.Success(ticket);
             }
             catch (AuthenticationException ex)
             {
                 _logger.LogDebug(ex, "Error authenticating with {Handler}", nameof(CustomAuthenticationHandler));
-                return Task.FromResult(AuthenticateResult.NoResult());
+                return AuthenticateResult.NoResult();
             }
             catch (SecurityException ex)
             {
-                return Task.FromResult(AuthenticateResult.Fail(ex));
+                return AuthenticateResult.Fail(ex);
             }
         }
     }

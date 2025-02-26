@@ -1,5 +1,3 @@
-#pragma warning disable CA2227
-
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -20,10 +18,7 @@ namespace Jellyfin.Data.Entities
         /// <param name="name">The name of the group.</param>
         public Group(string name)
         {
-            if (string.IsNullOrEmpty(name))
-            {
-                throw new ArgumentNullException(nameof(name));
-            }
+            ArgumentException.ThrowIfNullOrEmpty(name);
 
             Name = name;
             Id = Guid.NewGuid();
@@ -33,12 +28,12 @@ namespace Jellyfin.Data.Entities
         }
 
         /// <summary>
-        /// Gets or sets the id of this group.
+        /// Gets the id of this group.
         /// </summary>
         /// <remarks>
         /// Identity, Indexed, Required.
         /// </remarks>
-        public Guid Id { get; protected set; }
+        public Guid Id { get; private set; }
 
         /// <summary>
         /// Gets or sets the group's name.
@@ -52,17 +47,17 @@ namespace Jellyfin.Data.Entities
 
         /// <inheritdoc />
         [ConcurrencyCheck]
-        public uint RowVersion { get; set; }
+        public uint RowVersion { get; private set; }
 
         /// <summary>
-        /// Gets or sets a collection containing the group's permissions.
+        /// Gets a collection containing the group's permissions.
         /// </summary>
-        public virtual ICollection<Permission> Permissions { get; protected set; }
+        public virtual ICollection<Permission> Permissions { get; private set; }
 
         /// <summary>
-        /// Gets or sets a collection containing the group's preferences.
+        /// Gets a collection containing the group's preferences.
         /// </summary>
-        public virtual ICollection<Preference> Preferences { get; protected set; }
+        public virtual ICollection<Preference> Preferences { get; private set; }
 
         /// <inheritdoc/>
         public bool HasPermission(PermissionKind kind)
